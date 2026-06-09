@@ -1,0 +1,4 @@
+build-*/
+
+# Игнорируем файлы настроек Qt Creator
+*.pro.user*
