@@ -39,7 +39,7 @@ _Put_time<char> GetTime()
 {
     auto now_sys = chrono::system_clock::now();
     time_t t = chrono::system_clock::to_time_t(now_sys);
-    tm* tm = localtime(&t);
+    tm *tm = localtime(&t);
     _Put_time<char> time = put_time(tm, "%H:%M:%S");
 
     return time;
@@ -98,8 +98,8 @@ void FillICMPData(char *icmp_packet, int dataSize, int packetNumber)
 
     icmp_hdr->i_type = ICMP_ECHO;
     icmp_hdr->i_code = 0;
-    icmp_hdr->i_id = (USHORT)GetCurrentProcessId();
-    icmp_hdr->i_cksum = 0;
+    //icmp_hdr->i_id = (USHORT)GetCurrentProcessId();
+    //icmp_hdr->i_cksum = 0;
     icmp_hdr->i_seq = packetNumber;
 
     icmp_data_block->timestamp = GetTickCount();
