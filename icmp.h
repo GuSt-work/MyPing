@@ -11,13 +11,10 @@ struct IcmpHeader
     BYTE i_type;
     BYTE i_code;
     USHORT i_cksum;
-    USHORT i_id;
-    USHORT i_seq;
 };
 
 struct IcmpData
 {
-    ULONG timestamp;
     GUID guid;
 };
 

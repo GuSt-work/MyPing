@@ -21,7 +21,7 @@ const USHORT ICMP_ECHO = 8;
 const USHORT NUMBER_PACKETS = 4;
 const USHORT RESP_TIMEOUT = 4000;
 const USHORT REQ_TIMEOUT = 1000;
-const USHORT TTL = 255;
+const USHORT TTL = 2;
 
 
 USHORT CURRENT_CK_SUM = 0;
@@ -31,9 +31,18 @@ struct SendedPacket
 {
     int seq;
     bool received;
-    DWORD sendTime;
+    chrono::steady_clock::time_point sendTime;
     GUID guid;
 };
+
+// Получить временной интервал в миллисекундах
+int GetDeltaTime(chrono::steady_clock::time_point startInterval)
+{
+    auto now = chrono::steady_clock::now();
+    auto deltaTime = chrono::duration_cast<chrono::milliseconds>(now - startInterval).count();
+
+    return deltaTime;
+}
 
 _Put_time<char> GetTime()
 {
@@ -55,7 +64,7 @@ bool IsResponceTimeout(vector<SendedPacket> &packets)
         if(packet.received)
             continue;
 
-        auto deltaTime = GetTickCount() - packet.sendTime;
+        auto deltaTime = GetDeltaTime(packet.sendTime);
         if(deltaTime >= RESP_TIMEOUT)
         {
             packet.received = true;
@@ -99,10 +108,10 @@ void FillICMPData(char *icmp_packet, int dataSize, int packetNumber)
     icmp_hdr->i_type = ICMP_ECHO;
     icmp_hdr->i_code = 0;
     //icmp_hdr->i_id = (USHORT)GetCurrentProcessId();
-    //icmp_hdr->i_cksum = 0;
-    icmp_hdr->i_seq = packetNumber;
+    icmp_hdr->i_cksum = 0;
+    //icmp_hdr->i_seq = packetNumber;
 
-    icmp_data_block->timestamp = GetTickCount();
+    //cmp_data_block->timestamp = GetTickCount();
     icmp_data_block->guid = CorrentGuid;
 
     icmp_hdr->i_cksum = checksum((USHORT*)icmp_packet, dataSize);
@@ -126,7 +135,7 @@ bool ValidateArgs(int argc, char **argv)
     return true;
 }
 
-void DecodeICMP(char *buf, vector<SendedPacket> &sendedPackets)
+void DecodeICMP(char *buf, int bufSize, vector<SendedPacket> &sendedPackets)
 {
     IpHeader *ip_hdr = NULL;
     IcmpHeader *icmp_hdr = NULL;
@@ -135,6 +144,7 @@ void DecodeICMP(char *buf, vector<SendedPacket> &sendedPackets)
     ip_hdr = (IpHeader*)buf;
 
     USHORT iphdrlen = ip_hdr->h_len * 4;
+    auto icmpHeadLen = sizeof(IcmpHeader);
 
     icmp_hdr = (IcmpHeader*)(buf + iphdrlen);
     icmp_data = (IcmpData*)(buf + iphdrlen + sizeof(IcmpHeader));
@@ -148,14 +158,16 @@ void DecodeICMP(char *buf, vector<SendedPacket> &sendedPackets)
         USHORT error_ip_hdr_len = error_ip_hdr->h_len * 4;
         error_icmp_data = (IcmpData*)(buf + iphdrlen + sizeof(IcmpHeader)+ error_ip_hdr_len + sizeof(IcmpHeader));
 
+        auto errorsizeIP = sizeof(error_ip_hdr);
+
         for(SendedPacket &sp : sendedPackets)
         {
             if(!sp.received && sp.guid == error_icmp_data->guid)
             {
-                auto delta_time = GetTickCount() - sp.sendTime;
-
-                cout << "\n" << "ERROR Reply for packet " << icmp_hdr->i_seq
-                     << " time=" << delta_time << "ms"
+                auto deltaTime = GetDeltaTime(sp.sendTime);
+                cout << "\n" << "ERROR Reply for packet "
+                     //<< icmp_hdr->i_seq
+                     << " time=" << deltaTime << "ms"
                      << " Type:" << (USHORT)icmp_hdr->i_type
                      << " Code:" << (USHORT)icmp_hdr->i_code
                      << " TTL:" << (USHORT)ip_hdr->ttl
@@ -171,9 +183,10 @@ void DecodeICMP(char *buf, vector<SendedPacket> &sendedPackets)
         {
             if(!sp.received && sp.guid == icmp_data->guid)
             {
-                auto delta_time = GetTickCount() - sp.sendTime;
-                cout << "\n" << "Reply for packet " << icmp_hdr->i_seq
-                     << " time=" << delta_time << "ms"
+                auto deltaTime = GetDeltaTime(sp.sendTime);
+                cout << "\n" << "Reply for packet "
+                     //<< icmp_hdr->i_seq
+                     << " time=" << deltaTime << "ms"
                      << " Type:" << (USHORT)icmp_hdr->i_type
                      << " Code:" << (USHORT)icmp_hdr->i_code
                      << " TTL:" << (USHORT)ip_hdr->ttl
@@ -196,6 +209,8 @@ void CleanResources(SOCKET &sockRaw, char *icmp_data, char *recvbuf)
 
     WSACleanup();
 }
+
+
 
 int main(int argc, char *argv[])
 {
@@ -232,7 +247,7 @@ int main(int argc, char *argv[])
     recvbuf = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, MAX_PACKET);
 
     vector<SendedPacket> sendedPackets;
-    DWORD lastSendTime = 0;
+    auto lastSendTime = chrono::steady_clock::now();
 
     fd_set fds;
     struct timeval tv;
@@ -244,7 +259,7 @@ int main(int argc, char *argv[])
     int nCount = 0;
     while (1)
     {
-        if(sendedPackets.size() < NUMBER_PACKETS && (GetTickCount() - lastSendTime) >= REQ_TIMEOUT)
+        if(sendedPackets.size() < NUMBER_PACKETS && GetDeltaTime(lastSendTime) >= REQ_TIMEOUT)
         {
             CoCreateGuid(&CorrentGuid);
             FillICMPData(icmp_packet, datasize, nCount);
@@ -264,12 +279,12 @@ int main(int argc, char *argv[])
             {
                 SendedPacket sp;
                 sp.received = false;
-                sp.sendTime = GetTickCount();
+                sp.sendTime = chrono::steady_clock::now();
                 sp.seq = nCount;
                 sp.guid = CorrentGuid;
                 sendedPackets.push_back(sp);
 
-                lastSendTime = GetTickCount();
+                lastSendTime = chrono::steady_clock::now();
                 cout << "Packet " << nCount << " is send at " << GetTime() << "\n";
 
                 ++nCount;
@@ -279,11 +294,11 @@ int main(int argc, char *argv[])
         FD_ZERO(&fds);
         FD_SET(sockRaw, &fds);
 
-        ret = select(sockRaw + 1, &fds, NULL, NULL, &tv);
+        ret = select(0, &fds, NULL, NULL, &tv);
         if(ret > 0)
         {
-            recvfrom(sockRaw, recvbuf, MAX_PACKET, 0, (sockaddr*)&src, &srclen);
-            DecodeICMP(recvbuf, sendedPackets);
+            int bufSize = recvfrom(sockRaw, recvbuf, MAX_PACKET, 0, (sockaddr*)&src, &srclen);
+            DecodeICMP(recvbuf, bufSize, sendedPackets);
         }
         else if(ret != 0)
         {
