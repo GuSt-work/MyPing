@@ -21,7 +21,7 @@ const USHORT ICMP_ECHO = 8;
 const USHORT NUMBER_PACKETS = 4;
 const USHORT RESP_TIMEOUT = 4000;
 const USHORT REQ_TIMEOUT = 1000;
-const USHORT TTL = 2;
+const USHORT TTL = 255;
 
 
 USHORT CURRENT_CK_SUM = 0;
@@ -99,22 +99,14 @@ USHORT checksum(USHORT *buffer, int size)
 }
 
 
-void FillICMPData(char *icmp_packet, int dataSize, int packetNumber)
+void FillICMPData(IcmpPacket *pkt)
 {
-    IcmpHeader *icmp_hdr = nullptr;
-    icmp_hdr = (IcmpHeader*)icmp_packet;
-    IcmpData *icmp_data_block = (IcmpData*)(icmp_packet + sizeof(IcmpHeader));
+    pkt->header.i_type = ICMP_ECHO;
+    pkt->header.i_code = 0;
+    pkt->data.guid = CorrentGuid;
+    pkt->header.i_cksum =0;
 
-    icmp_hdr->i_type = ICMP_ECHO;
-    icmp_hdr->i_code = 0;
-    //icmp_hdr->i_id = (USHORT)GetCurrentProcessId();
-    icmp_hdr->i_cksum = 0;
-    //icmp_hdr->i_seq = packetNumber;
-
-    //cmp_data_block->timestamp = GetTickCount();
-    icmp_data_block->guid = CorrentGuid;
-
-    icmp_hdr->i_cksum = checksum((USHORT*)icmp_packet, dataSize);
+    pkt->header.i_cksum = checksum((USHORT*)pkt, sizeof(IcmpPacket));
 }
 
 bool ValidateArgs(int argc, char **argv)
@@ -135,8 +127,39 @@ bool ValidateArgs(int argc, char **argv)
     return true;
 }
 
+void PrintHexDump(const char* data, int len, int bytes_per_line = 16) {
+    std::cout << std::hex << std::setfill('0');
+    for (int i = 0; i < len; i += bytes_per_line) {
+        // Печать смещения
+        std::cout << std::setw(4) << i << "   ";
+
+        // Печать шестнадцатеричных байтов
+        for (int j = 0; j < bytes_per_line; ++j) {
+            if (i + j < len) {
+                std::cout << std::setw(2) << (unsigned int)(unsigned char)data[i + j] << " ";
+            } else {
+                std::cout << "   "; // для выравнивания, если последняя строка короче
+            }
+        }
+
+        // // Печать ASCII представления
+        // std::cout << " ";
+        // for (int j = 0; j < bytes_per_line && i + j < len; ++j) {
+        //     char c = data[i + j];
+        //     std::cout << (isprint(c) ? c : '.');
+        // }
+        std::cout << std::endl;
+    }
+    std::cout << std::dec; // вернуть десятичный формат
+}
+
 void DecodeICMP(char *buf, int bufSize, vector<SendedPacket> &sendedPackets)
 {
+    cout << "\n" << "Input packet "
+         << " size=" << bufSize
+         << "\n" << endl;
+    PrintHexDump(buf, bufSize);
+
     IpHeader *ip_hdr = NULL;
     IcmpHeader *icmp_hdr = NULL;
     IcmpData *icmp_data = NULL;
@@ -210,7 +233,36 @@ void CleanResources(SOCKET &sockRaw, char *icmp_data, char *recvbuf)
     WSACleanup();
 }
 
+int CreateSocket(SOCKET &sockRaw)
+{
+    u_long mode = 1;
+    WSADATA wsaData;
+    if(WSAStartup(MAKEWORD(2,2), &wsaData) != 0)
+    {
+        cerr << "[ERROR] WSAStartup() failed: " << WSAGetLastError() << "\n";
+        return -1;
+    }
 
+    sockRaw = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if(sockRaw == INVALID_SOCKET)
+    {
+        cerr << "[ERROR] socket() failed: " << WSAGetLastError() << "\n";
+        WSACleanup();
+        return -1;
+    }
+
+    setsockopt(sockRaw, IPPROTO_IP, IP_TTL, (char*)&TTL, sizeof(TTL));
+
+    int nonBlock = ioctlsocket(sockRaw, FIONBIO, &mode);
+    if(nonBlock == SOCKET_ERROR)
+    {
+        if(sockRaw != INVALID_SOCKET)
+            closesocket(sockRaw);
+
+        WSACleanup();
+    }
+    return 1;
+}
 
 int main(int argc, char *argv[])
 {
@@ -221,29 +273,15 @@ int main(int argc, char *argv[])
     if(!isValidate)
         return -1;
 
-    WSADATA wsaData;
-    if(WSAStartup(MAKEWORD(2,2), &wsaData) != 0)
-    {
-        cerr << "[ERROR] WSAStartup() failed: " << WSAGetLastError() << "\n";
-        return -1;
-    }
-
-    SOCKET sockRaw = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-    if(sockRaw == INVALID_SOCKET)
-    {
-        cerr << "[ERROR] socket() failed: " << WSAGetLastError() << "\n";
-        WSACleanup();
-        return -1;
-    }
-
-    setsockopt(sockRaw, IPPROTO_IP, IP_TTL, (char*)&TTL, sizeof(TTL));
+    SOCKET sockRaw;
+    CreateSocket(sockRaw);
 
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
     inet_pton(AF_INET, argv[1], &(dest.sin_addr.s_addr));
 
-    int datasize = sizeof(IcmpHeader) + sizeof(IcmpData);
-    icmp_packet = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, MAX_PACKET);
+    int datasize = sizeof(IcmpPacket);
+
     recvbuf = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, MAX_PACKET);
 
     vector<SendedPacket> sendedPackets;
@@ -262,9 +300,12 @@ int main(int argc, char *argv[])
         if(sendedPackets.size() < NUMBER_PACKETS && GetDeltaTime(lastSendTime) >= REQ_TIMEOUT)
         {
             CoCreateGuid(&CorrentGuid);
-            FillICMPData(icmp_packet, datasize, nCount);
 
-            int bwrote = sendto(sockRaw, icmp_packet, datasize, 0, (sockaddr*)&dest, sizeof(dest));
+            IcmpPacket icmp_pack;
+            FillICMPData((IcmpPacket*)&icmp_pack);
+
+            int bwrote = sendto(sockRaw, (char*)&icmp_pack, sizeof(IcmpPacket), 0, (sockaddr*)&dest, sizeof(dest));
+
             if(bwrote == SOCKET_ERROR)
             {
                 if(WSAGetLastError() == WSAETIMEDOUT)
@@ -285,7 +326,16 @@ int main(int argc, char *argv[])
                 sendedPackets.push_back(sp);
 
                 lastSendTime = chrono::steady_clock::now();
-                cout << "Packet " << nCount << " is send at " << GetTime() << "\n";
+                cout << "Packet " << nCount
+                     << " is send at " << GetTime()
+                     << " Size " << bwrote
+                     << "\n";
+
+                PrintHexDump((char*)&icmp_pack, sizeof(IcmpPacket));
+
+                cout << "sizeof(IcmpPacket) " << sizeof(IcmpPacket) << "\n"
+                     << "sizeof(icmp_pack)" << sizeof(icmp_pack)
+                     << "\n";
 
                 ++nCount;
             }
@@ -297,8 +347,24 @@ int main(int argc, char *argv[])
         ret = select(0, &fds, NULL, NULL, &tv);
         if(ret > 0)
         {
-            int bufSize = recvfrom(sockRaw, recvbuf, MAX_PACKET, 0, (sockaddr*)&src, &srclen);
-            DecodeICMP(recvbuf, bufSize, sendedPackets);
+            if(FD_ISSET(sockRaw, &fds))
+            {
+                while(1)
+                {
+                    int bufSize = recvfrom(sockRaw, recvbuf, MAX_PACKET, 0, (sockaddr*)&src, &srclen);
+                    if(bufSize < 0)
+                    {
+                        if(WSAGetLastError() == WSAEWOULDBLOCK)
+                            break;
+                    }
+
+                    DecodeICMP(recvbuf, bufSize, sendedPackets);
+                }
+            }
+            else
+            {
+                cout << "NOT FDISSET" << "\n";
+            }
         }
         else if(ret != 0)
         {

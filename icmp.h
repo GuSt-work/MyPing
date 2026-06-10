@@ -18,6 +18,12 @@ struct IcmpData
     GUID guid;
 };
 
+struct IcmpPacket
+{
+    IcmpHeader header;
+    IcmpData data;
+};
+
 #pragma pack()
 
 #endif // ICMP_H
