@@ -127,7 +127,7 @@ bool ValidateArgs(int argc, char **argv)
     return true;
 }
 
-void PrintHexDump(const char* data, int len, int bytes_per_line = 16) {
+void PrintHexDump(const vector<char> &data, int len, int bytes_per_line = 16) {
     std::cout << std::hex << std::setfill('0');
     for (int i = 0; i < len; i += bytes_per_line) {
         // Печать смещения
@@ -153,12 +153,14 @@ void PrintHexDump(const char* data, int len, int bytes_per_line = 16) {
     std::cout << std::dec; // вернуть десятичный формат
 }
 
-void DecodeICMP(char *buf, int bufSize, vector<SendedPacket> &sendedPackets)
+void DecodeICMP(vector<char> &data, int bufSize, vector<SendedPacket> &sendedPackets)
 {
+    const char* buf = data.data();
+
     cout << "\n" << "Input packet "
          << " size=" << bufSize
          << "\n" << endl;
-    PrintHexDump(buf, bufSize);
+    PrintHexDump(data, bufSize);
 
     IpHeader *ip_hdr = NULL;
     IcmpHeader *icmp_hdr = NULL;
@@ -222,13 +224,11 @@ void DecodeICMP(char *buf, int bufSize, vector<SendedPacket> &sendedPackets)
 
 }
 
-void CleanResources(SOCKET &sockRaw, char *icmp_data, char *recvbuf)
+void CleanResources(SOCKET &sockRaw)
 {
     if(sockRaw != INVALID_SOCKET)
         closesocket(sockRaw);
 
-    HeapFree(GetProcessHeap(), 0, icmp_data);
-    HeapFree(GetProcessHeap(), 0, recvbuf);
 
     WSACleanup();
 }
@@ -267,7 +267,7 @@ int CreateSocket(SOCKET &sockRaw)
 int main(int argc, char *argv[])
 {
     struct sockaddr_in dest, src;
-    char *icmp_packet = NULL, *recvbuf = NULL;
+    //char *icmp_packet = NULL, *recvbuf = NULL;
 
     bool isValidate = ValidateArgs(argc, argv);
     if(!isValidate)
@@ -282,8 +282,8 @@ int main(int argc, char *argv[])
 
     int datasize = sizeof(IcmpPacket);
 
-    recvbuf = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, MAX_PACKET);
-
+    //recvbuf = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, MAX_PACKET);
+    vector<char> recvbuf(MAX_PACKET, 0);
     vector<SendedPacket> sendedPackets;
     auto lastSendTime = chrono::steady_clock::now();
 
@@ -331,7 +331,7 @@ int main(int argc, char *argv[])
                      << " Size " << bwrote
                      << "\n";
 
-                PrintHexDump((char*)&icmp_pack, sizeof(IcmpPacket));
+                //PrintHexDump(&icmp_pack, sizeof(IcmpPacket));
 
                 cout << "sizeof(IcmpPacket) " << sizeof(IcmpPacket) << "\n"
                      << "sizeof(icmp_pack)" << sizeof(icmp_pack)
@@ -351,7 +351,7 @@ int main(int argc, char *argv[])
             {
                 while(1)
                 {
-                    int bufSize = recvfrom(sockRaw, recvbuf, MAX_PACKET, 0, (sockaddr*)&src, &srclen);
+                    int bufSize = recvfrom(sockRaw, recvbuf.data(), recvbuf.size(), 0, (sockaddr*)&src, &srclen);
                     if(bufSize < 0)
                     {
                         if(WSAGetLastError() == WSAEWOULDBLOCK)
@@ -369,7 +369,7 @@ int main(int argc, char *argv[])
         else if(ret != 0)
         {
             cerr << "[ERROR] select is error " << WSAGetLastError() << "\n";
-            CleanResources(sockRaw, icmp_packet, recvbuf);
+            CleanResources(sockRaw);
         }
 
         if(IsResponceTimeout(sendedPackets) && sendedPackets.size() == NUMBER_PACKETS)
@@ -379,6 +379,6 @@ int main(int argc, char *argv[])
         Sleep(100);
     }
 
-    CleanResources(sockRaw, icmp_packet, recvbuf);
+    CleanResources(sockRaw);
     return 0;
 }
