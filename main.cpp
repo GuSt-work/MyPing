@@ -69,7 +69,10 @@ void IsResponceTimeout(map<GUID, SendedPacket> &packets)
         {
             //packets.erase(packet.first);
             forDel.push_back(packet.first);
-            cout << "Packet " << packet.second.seq << " timeout! at " << GetTime() << "\n";
+            cout << "Packet " << packet.second.seq
+                 << " timeout at " << GetTime() << "!"
+                 << " deltaTime=" << deltaTime
+                 << "\n" << endl;
 
         }
     }
@@ -179,35 +182,17 @@ void DecodeICMP(vector<char> &data, int bufSize, map<GUID, SendedPacket> &sended
         if(find != sendedPackets.end())
         {
             auto deltaTime = GetDeltaTime(find->second.sendTime);
-            cout << "\n" << "ERROR Reply for packet "
+            cout << "ERROR Reply for packet "
                  << " time=" << deltaTime << "ms"
                  << " Type:" << (USHORT)icmp_hdr->i_type
                  << " Code:" << (USHORT)icmp_hdr->i_code
                  << " TTL:" << (USHORT)ip_hdr->ttl
                  << "\n"
                  << "Input Guid " << GuidToString(error_icmp_data->guid) << "\n"
-                 << "\n";
+                 << "\n" << endl;
 
             sendedPackets.erase(find);
         }
-
-        // for(SendedPacket &sp : sendedPackets)
-        // {
-        //     if(!sp.received && sp.guid == error_icmp_data->guid)
-        //     {
-        //         auto deltaTime = GetDeltaTime(sp.sendTime);
-        //         cout << "\n" << "ERROR Reply for packet "
-        //              << " time=" << deltaTime << "ms"
-        //              << " Type:" << (USHORT)icmp_hdr->i_type
-        //              << " Code:" << (USHORT)icmp_hdr->i_code
-        //              << " TTL:" << (USHORT)ip_hdr->ttl
-        //              << "\n"
-        //              << "Input Guid " << GuidToString(error_icmp_data->guid) << "\n"
-        //              << "\n" << endl;
-
-        //         sp.received = true;
-        //     }
-        // }
     }
     else
     {
@@ -215,38 +200,17 @@ void DecodeICMP(vector<char> &data, int bufSize, map<GUID, SendedPacket> &sended
         if(find != sendedPackets.end())
         {
             auto deltaTime = GetDeltaTime(find->second.sendTime);
-            cout << "\n" << "Reply for packet "
+            cout << "Reply for packet "
                  << " time=" << deltaTime << "ms"
                  << " Type:" << (USHORT)icmp_hdr->i_type
                  << " Code:" << (USHORT)icmp_hdr->i_code
                  << " TTL:" << (USHORT)ip_hdr->ttl
                  << "\n"
                  << "Input Guid " << GuidToString(icmp_data->guid) << "\n"
-                 << "\n";
+                 << "\n" << endl;
 
             sendedPackets.erase(find);
         }
-        // for(SendedPacket &sp : sendedPackets)
-        // {
-        //     if(!sp.received && sp.guid == icmp_data->guid)
-        //     {
-        //         wchar_t outputGuid[64];
-        //         StringFromGUID2(sp.guid, outputGuid, 64);
-
-        //         auto deltaTime = GetDeltaTime(sp.sendTime);
-        //         cout << "\n" << "Reply for packet "
-        //              << " time=" << deltaTime << "ms"
-        //              << " Type:" << (USHORT)icmp_hdr->i_type
-        //              << " Code:" << (USHORT)icmp_hdr->i_code
-        //              << " TTL:" << (USHORT)ip_hdr->ttl
-        //              << "\n"
-        //              << "Input Guid  " << GuidToString(icmp_data->guid) << "\n"
-        //              << "\n" << endl;
-
-
-        //         sp.received = true;
-        //     }
-        // }
     }
 
 }
@@ -309,7 +273,6 @@ int main(int argc, char *argv[])
     inet_pton(AF_INET, argv[1], &(dest.sin_addr.s_addr));
 
     vector<char> recvbuf(MAX_PACKET, 0);
-    //vector<SendedPacket> sendedPackets;
     map<GUID, SendedPacket> sendedPackets;
     auto lastSendTime = chrono::steady_clock::now();
 
@@ -357,7 +320,7 @@ int main(int argc, char *argv[])
                      << " Size " << bwrote
                      << "\n"
                      << "GUID       " << GuidToString(CorrentGuid)
-                     << "\n";
+                     << "\n" << endl;
 
                 ++nCount;
             }
