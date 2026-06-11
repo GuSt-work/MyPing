@@ -153,6 +153,16 @@ void PrintHexDump(const vector<char> &data, int len, int bytes_per_line = 16) {
     std::cout << std::dec; // вернуть десятичный формат
 }
 
+std::string GuidToString(const GUID& guid) {
+    wchar_t wbuf[64];
+    if (StringFromGUID2(guid, wbuf, 64) == 0)
+        return "{}";
+    // Преобразование широкой строки в узкую (подходит для ASCII-символов GUID)
+    char buf[64];
+    wcstombs(buf, wbuf, 64);
+    return std::string(buf);
+}
+
 void DecodeICMP(vector<char> &data, int bufSize, vector<SendedPacket> &sendedPackets)
 {
     const char* buf = data.data();
@@ -160,7 +170,7 @@ void DecodeICMP(vector<char> &data, int bufSize, vector<SendedPacket> &sendedPac
     cout << "\n" << "Input packet "
          << " size=" << bufSize
          << "\n" << endl;
-    PrintHexDump(data, bufSize);
+    //PrintHexDump(data, bufSize);
 
     IpHeader *ip_hdr = NULL;
     IcmpHeader *icmp_hdr = NULL;
@@ -170,20 +180,28 @@ void DecodeICMP(vector<char> &data, int bufSize, vector<SendedPacket> &sendedPac
 
     USHORT iphdrlen = ip_hdr->h_len * 4;
     auto icmpHeadLen = sizeof(IcmpHeader);
+    auto sumsize = iphdrlen + sizeof(IcmpHeader);
+    if(iphdrlen + sizeof(IcmpHeader) > bufSize)
+    {
+        cout << "input packet is small\n" << endl;
+        return;
+    }
 
     icmp_hdr = (IcmpHeader*)(buf + iphdrlen);
     icmp_data = (IcmpData*)(buf + iphdrlen + sizeof(IcmpHeader));
+
 
     if(icmp_hdr->i_type != 0 || icmp_hdr->i_code != 0 )
     {
         IpHeader *error_ip_hdr = NULL;
         IcmpData *error_icmp_data = NULL;
 
-        error_ip_hdr = (IpHeader*)(buf + iphdrlen + sizeof(IcmpHeader));
+        error_ip_hdr = (IpHeader*)(buf + iphdrlen + sizeof(IcmpHeader) + 4);
         USHORT error_ip_hdr_len = error_ip_hdr->h_len * 4;
-        error_icmp_data = (IcmpData*)(buf + iphdrlen + sizeof(IcmpHeader)+ error_ip_hdr_len + sizeof(IcmpHeader));
+        error_icmp_data = (IcmpData*)(buf + iphdrlen + sizeof(IcmpHeader) + 4 + error_ip_hdr_len + sizeof(IcmpHeader));
 
         auto errorsizeIP = sizeof(error_ip_hdr);
+
 
         for(SendedPacket &sp : sendedPackets)
         {
@@ -196,6 +214,9 @@ void DecodeICMP(vector<char> &data, int bufSize, vector<SendedPacket> &sendedPac
                      << " Type:" << (USHORT)icmp_hdr->i_type
                      << " Code:" << (USHORT)icmp_hdr->i_code
                      << " TTL:" << (USHORT)ip_hdr->ttl
+                     << "\n"
+                     << " inputGuid " << GuidToString(error_icmp_data->guid) << "\n"
+                    // << " outputGuid" <<  outputGuid
                      << "\n" << endl;
 
                 sp.received = true;
@@ -208,6 +229,9 @@ void DecodeICMP(vector<char> &data, int bufSize, vector<SendedPacket> &sendedPac
         {
             if(!sp.received && sp.guid == icmp_data->guid)
             {
+                wchar_t outputGuid[64];
+                StringFromGUID2(sp.guid, outputGuid, 64);
+
                 auto deltaTime = GetDeltaTime(sp.sendTime);
                 cout << "\n" << "Reply for packet "
                      //<< icmp_hdr->i_seq
@@ -215,7 +239,11 @@ void DecodeICMP(vector<char> &data, int bufSize, vector<SendedPacket> &sendedPac
                      << " Type:" << (USHORT)icmp_hdr->i_type
                      << " Code:" << (USHORT)icmp_hdr->i_code
                      << " TTL:" << (USHORT)ip_hdr->ttl
-                     << "\n"<< endl;
+                     << "\n"
+                     << " inputGuid  " << GuidToString(icmp_data->guid) << "\n"
+                     //<< " outputGuid " << outputGuid
+                     << "\n" << endl;
+
 
                 sp.received = true;
             }
@@ -263,6 +291,8 @@ int CreateSocket(SOCKET &sockRaw)
     }
     return 1;
 }
+
+
 
 int main(int argc, char *argv[])
 {
@@ -329,18 +359,21 @@ int main(int argc, char *argv[])
                 cout << "Packet " << nCount
                      << " is send at " << GetTime()
                      << " Size " << bwrote
-                     << "\n";
+                     << "\n"
+                     << "GUID " << GuidToString(CorrentGuid)
+                     << "\n" << endl;
 
                 //PrintHexDump(&icmp_pack, sizeof(IcmpPacket));
 
                 cout << "sizeof(IcmpPacket) " << sizeof(IcmpPacket) << "\n"
-                     << "sizeof(icmp_pack)" << sizeof(icmp_pack)
+                     << "sizeof(icmp_pack)" << sizeof(icmp_pack) << "\n"
+                     << "sizeof(sp.guid)" << sizeof(sp.guid)
                      << "\n";
 
                 ++nCount;
             }
         }
-
+        //continue;
         FD_ZERO(&fds);
         FD_SET(sockRaw, &fds);
 
