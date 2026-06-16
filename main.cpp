@@ -21,7 +21,7 @@ const USHORT ICMP_ECHO = 8;
 const USHORT NUMBER_PACKETS = 4;
 const USHORT RESP_TIMEOUT = 4000;
 const USHORT REQ_TIMEOUT = 1000;
-const USHORT TTL = 255;
+const USHORT TTL = 1;
 
 USHORT CURRENT_CK_SUM = 0;
 GUID CorrentGuid;
@@ -63,6 +63,7 @@ void IsResponceTimeout(map<GUID, SendedPacket> &packets)
 {
     vector<GUID> forDel;
     for(auto packet : packets)
+//    for(auto packet  = packets.begin(); packet != packets.end(); )
     {
         auto deltaTime = GetDeltaTime(packet.second.sendTime);
         if(deltaTime >= RESP_TIMEOUT)
@@ -73,9 +74,12 @@ void IsResponceTimeout(map<GUID, SendedPacket> &packets)
                  << " timeout at " << GetTime() << "!"
                  << " deltaTime=" << deltaTime
                  << "\n" << endl;
-
+    //        packet = packets.erase(packet);
         }
+      //  else
+        //    packet++;
     }
+
     for(auto g : forDel)
     {
         packets.erase(g);
@@ -220,7 +224,6 @@ void CleanResources(SOCKET &sockRaw)
     if(sockRaw != INVALID_SOCKET)
         closesocket(sockRaw);
 
-
     WSACleanup();
 }
 
@@ -311,7 +314,6 @@ int main(int argc, char *argv[])
                 sp.received = false;
                 sp.sendTime = chrono::steady_clock::now();
                 sp.seq = nCount;
-               // sp.guid = CorrentGuid;
                 sendedPackets[CorrentGuid] = sp;
 
                 lastSendTime = chrono::steady_clock::now();
@@ -341,6 +343,7 @@ int main(int argc, char *argv[])
                     {
                         if(WSAGetLastError() == WSAEWOULDBLOCK)
                             break;
+
                     }
 
                     DecodeICMP(recvbuf, bufSize, sendedPackets);
@@ -359,6 +362,7 @@ int main(int argc, char *argv[])
 
         Sleep(100);
     }
+
 
     CleanResources(sockRaw);
     return 0;
